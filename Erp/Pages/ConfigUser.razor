@@ -1,0 +1,159 @@
+﻿@page "/user-config"
+@attribute [Authorize(Roles = "/user-config")]
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.ModelsApi
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@attribute [Authorize]
+@inject IMessageService message;
+@inject SettingTransferService tSettings;
+@inject RestService rest;
+
+<PageTitle>User Config</PageTitle>
+
+<Divider Text="User Config" Orientation="DividerOrientation.Left"></Divider>
+
+
+<Table DataSource="@tSettings.UserSettingAll"
+       PageSize="50"
+       AutoColIndexes="true"
+       PaginationPosition="topLeft"
+       Loading="loading"
+       Size="TableSize.Small"
+       AutoHeight>
+
+    <PaginationTemplate>
+        <Row Style="align-items: center">
+            <Col Span="22">
+            <Pagination Class="@(context.PaginationClass + " my-custom-pagination")"
+                        Total="context.Total"
+                        PageSize="context.PageSize"
+                        Current="context.PageIndex"
+                        ShowSizeChanger
+                        OnChange="context.HandlePageChange" />
+            </Col>
+            <Col Span="2">
+            <Flex Justify="FlexJustify.Center" Style="justify-content: center">
+                @* <Button Type="ButtonType.Primary" OnClick="Reset">Reset</Button> *@
+            </Flex>
+
+            </Col>
+        </Row>
+
+    </PaginationTemplate>
+
+    <EmptyTemplate>
+        @if (loading==false)
+        {
+            <Empty Simple/>
+        }
+
+    </EmptyTemplate>
+
+    <ColumnDefinitions>
+        <PropertyColumn Property="c=>c.ApplicationUserId" Title="Id" Sortable Filterable Width="80"/>
+        <PropertyColumn Property="c=>c.FullName" Title="Lawyer Name" Ellipsis Sortable Filterable Width="240" />
+        <PropertyColumn Property="c=>c.Phone" Title="Mobile" Filterable Width="110" />
+        <ActionColumn Title="Action">
+            @foreach (var item in context.Settings)
+            {
+                bool status = @Convert.ToBoolean(item.Value);
+                bool isDisabled = context.ApplicationUserId == 0 ? true : false;
+
+                <Checkbox Size="InputSize.Large"
+                Label="@item.SettingTitle"
+                Value="@status"
+                Disabled="@isDisabled"
+                Style="user-select: none; margin: 10px"
+                OnChange="(val)=>CheckChanged(context, item.SettingId, val)" />
+            }
+        </ActionColumn>
+    </ColumnDefinitions>
+</Table>
+
+@code {
+    private bool loading { get; set; } = false;
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+
+
+        if (tSettings.UserSettingAll.Count==0)
+        {
+            loading = true;
+
+            StateHasChanged();
+
+            List<UserSettingAllRes> result = await rest.GET($"/api/setting/get-user-setting-all", Token).ToModel<List<UserSettingAllRes>>();
+
+            if (result.Count>0)
+            {
+                tSettings.UserSettingAll = result;
+            }
+
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+
+    public async void CheckChanged(UserSettingAllRes userSettingAllRes, long SettingId, bool value)
+    {
+        if (userSettingAllRes.ApplicationUserId==0)
+        {
+            return;
+        }
+
+        foreach (var item in userSettingAllRes.Settings)
+        {
+            if (item.SettingId == SettingId)
+            {
+                item.Value = value.ToString();
+                break;
+            }
+        }
+
+        var userSettings = userSettingAllRes.Settings
+        .Select(m => new
+        {
+            UserId = userSettingAllRes.ApplicationUserId,
+            m.SettingId,
+            m.Value
+        })
+        .ToList();
+
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Applying...",
+                Key = key,
+                Duration = 0
+            };
+        _ = message.Loading(config);
+
+        ApiResponse result = await rest.POST($"/api/setting/save-user-setting", userSettings, Token);
+        config.Duration = 1;
+        if (result.Status == true)
+        {
+            config.Content = "Apply success!";
+            _ = message.Success(config);
+        }
+        else
+        {
+            config.Content = "Apply fail";
+            _ = message.Error(config);
+        }
+
+    }
+}

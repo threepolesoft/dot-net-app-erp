@@ -1,0 +1,249 @@
+﻿@page "/role-access"
+@attribute [Authorize(Roles = "/role-access")]
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.ModelsApi
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@attribute [Authorize]
+@inject IMessageService message;
+@inject RoleTransferService tRole;
+@inject RestService rest;
+@inject ModalService ModalService
+@inject MenuLeftTransferService tMenuLeft
+
+<PageTitle>Role Access</PageTitle>
+
+<Divider Text="Role Access" Orientation="DividerOrientation.Left"></Divider>
+
+<div style="height: 80vh; overflow-y:scroll">
+
+    <Collapse DefaultActiveKey="@(new[]{"1"})">
+        @{
+            int sl = 0;
+        }
+        @foreach (var item in roleAccessModels)
+        {
+            sl++;
+            <Panel Key="@sl.ToString()">
+                <HeaderTemplate>
+                    @item.RoleTitle
+                </HeaderTemplate>
+                <ChildContent>
+                    <Tree Checkable
+                          DefaultExpandAll
+                          BlockNode
+                          ShowIcon
+                          CheckOnClickNode="false"
+                          CheckStrictly="true"
+                          CheckedKeys="item.CheckedKeys"
+                          DataSource="item.Elements"
+                          TitleExpression="x => x.DataItem.Parent.MenuTitle"
+                          ChildrenExpression="x => x.DataItem.Child"
+                          IconExpression="x => x.DataItem.Parent.MenuIcon"
+                          IsLeafExpression="x => x.DataItem.Child?.Count == 0"
+                          KeyExpression="x => x.DataItem.Parent.MenuDetailId.ToString()"
+                          TItem="MenuElement"
+                          OnCheck="OnCheck"
+                          OnDragEnd="e=> { }">
+                    </Tree>
+                </ChildContent>
+            </Panel>
+        }
+    </Collapse>
+</div>
+
+
+
+@code {
+
+    private string txtValue { get; set; }
+    private bool loading { get; set; } = false;
+    Tree<MenuElement> tree;
+    public ClaimsPrincipal User;
+
+    private List<string> CheckedKeysTemp = new List<string>();
+    private string[] CheckedKeys = Array.Empty<string>();
+
+    public List<RoleAccessModel> roleAccessModels { get; set; } = new List<RoleAccessModel>();
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        loading = true;
+        StateHasChanged();
+        tRole.OnChange += StateHasChanged;
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+
+        try
+        {
+            roleAccessModels = await rest.GET($"/api/menu/role-menu", Token).ToModel<List<RoleAccessModel>>();
+
+            foreach (var item in roleAccessModels)
+            {
+                CheckedKeysTemp = new List<string>();
+                item.Elements = item.Menus.Select(MapToMenuElement).ToList();
+                item.CheckedKeys = CheckedKeysTemp.ToArray();
+            }
+        }
+        catch (Exception ex)
+        {
+            message.Error(ex.Message);
+        }
+
+        loading = false;
+    }
+
+    private async void OnCheck(TreeEventArgs<MenuElement> e)
+    {
+        clicked = new List<Clicked>();
+
+        // var keys = CheckedKeys.ToList(); // convert array to list
+
+        // if (e.Node.Checked)
+        // {
+        //     if (!keys.Contains(e.Node.Key))
+        //         keys.Add(e.Node.Key);
+        // }
+        // else
+        // {
+        //     keys.Remove(e.Node.Key);
+        // }
+
+        // CheckedKeys = keys.ToArray(); // update with a NEW array
+
+        RoleAccessModel roleAccessModel = roleAccessModels.FirstOrDefault(m => m.RoleId == e.Node.DataItem.Parent.RoleId);
+        CheckedKeysTemp = roleAccessModel.CheckedKeys.ToList();
+
+        foreach (var item in roleAccessModels)
+        {
+            if (item.RoleId == e.Node.DataItem.Parent.RoleId)
+            {
+                if (e.Node.Checked)
+                {
+                    ClickedMap(e.Node.DataItem, "a");
+                }
+                else
+                {
+                    ClickedMap(e.Node.DataItem, "r");
+                }
+
+                break;
+            }
+        }
+
+
+        foreach (var item in roleAccessModels)
+        {
+            if (item.RoleId == e.Node.DataItem.Parent.RoleId)
+            {
+                item.CheckedKeys = CheckedKeysTemp.ToArray();
+
+                foreach (var item1 in item.Elements)
+                {
+                    ExtractMenu(item1);
+                }
+
+                foreach (var item1 in clicked)
+                {
+                    if (item.CheckedKeys.Contains(item1.MenuDetailId.ToString()))
+                    {
+                        item1.Status = true;
+                    }
+                }
+                break;
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+
+        //return;
+
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Applying...",
+                Key = key,
+                Duration = 0
+            };
+        _ = message.Loading(config);
+
+        ApiResponse result = await rest.POST($"/api/menu/save-role-menu", clicked, Token);
+        config.Duration = 1;
+
+        if (result.Status == true)
+        {
+            config.Content = "Apply success!";
+            _ = message.Success(config);
+        }
+        else
+        {
+            config.Content = "Apply fail";
+            _ = message.Error(config);
+        }
+
+    }
+
+    public void ClickedMap(MenuElement menuItems, string action)
+    {
+        if (!CheckedKeysTemp.Contains(menuItems.Parent.MenuDetailId.ToString()) && action == "a")
+        {
+            CheckedKeysTemp.Add(menuItems.Parent.MenuDetailId.ToString());
+        }
+        else
+        {
+            CheckedKeysTemp.Remove(menuItems.Parent.MenuDetailId.ToString());
+        }
+
+        foreach (var item in menuItems.Child)
+        {
+            ClickedMap(item, action);
+        }
+    }
+
+    public List<Clicked> clicked = new List<Clicked>();
+    public void ExtractMenu(MenuElement menuItems)
+    {
+        clicked.Add(new Clicked
+            {
+                MenuDetailId = (int)menuItems.Parent.MenuDetailId,
+                RoleId = (int)menuItems.Parent.RoleId,
+                MenuId = (int)menuItems.Parent.MenuDetailId,
+            });
+
+        foreach (var item in menuItems.Child)
+        {
+            ExtractMenu(item);
+        }
+    }
+
+    // Convert LeftMenuModel to GameElement
+
+    private MenuElement MapToMenuElement(MenuLeftModel menu)
+    {
+        if (menu.Status)
+        {
+            CheckedKeysTemp.Add(menu.MenuDetailId.ToString());
+        }
+
+        return new MenuElement(menu)
+            {
+                Child = menu.SubMenus?.Select(MapToMenuElement).ToList() ?? new List<MenuElement>()
+            };
+    }
+
+    public class Clicked
+    {
+        public long MenuDetailId { get; set; }
+        public long RoleId { get; set; }
+        public long MenuId { get; set; }
+        public bool Status { get; set; }
+    }
+}

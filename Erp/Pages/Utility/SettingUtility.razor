@@ -1,0 +1,81 @@
+﻿@page "/setting-utility"
+@attribute [Authorize(Roles = "/setting-utility")]
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.ModelsApi
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@attribute [Authorize]
+@inject IMessageService message;
+@inject SettingTransferService tSettings;
+@inject RestService rest;
+@using Microsoft.AspNetCore.SignalR.Client
+@using Newtonsoft.Json
+@inject IConfiguration configuration;
+@inject SignalRService SignalRService
+
+<PageTitle>Setting Utility</PageTitle>
+
+<Divider Text="Setting Utility" Orientation="DividerOrientation.Left"></Divider>
+
+<Row Gutter="16">
+    <Col Span="5">
+    <Statistic Title="Junk Settings" Value="@JunkSettings" />
+    <Button Style="margin-top: 16px;" OnClick="OnClear" Type="ButtonType.Primary">
+        Clean
+    </Button>
+    </Col>
+</Row>
+
+@code {
+    private string txtValue { get; set; }
+    private bool loading { get; set; } = false;
+
+    public int JunkSettings{ get; set; }=0;
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+
+        ApiResponse result = await rest.GET($"/api/setting/setting-junk-count", Token);
+
+        if (result.Status == true)
+        {
+            JunkSettings = int.Parse(result.Data.ToString());
+        }
+    }
+
+    public async void OnClear()
+    {
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Cleaning...",
+                Key = key,
+                Duration = 0
+            };
+        _ = message.Loading(config);
+        ApiResponse result = await rest.GET($"/api/setting/setting-junk-delete", Token);
+        config.Duration = 1;
+        if (result.Status == true)
+        {
+            config.Content = "Cleaned success!";
+            _ = message.Success(config);
+        }
+        else
+        {
+            config.Content = "Cleaned fail";
+            _ = message.Error(config);
+        }
+    }
+}

@@ -1,0 +1,7 @@
+﻿dotnet tool install --global dotnet-ef
+dotnet tool update --global dotnet-ef
+dotnet ef --version
+
+
+dotnet ef migrations add name --project AppDAL --context PifErpDbContext -o Db/Migrations
+dotnet ef database update --project AppDAL --context PifErpDbContext

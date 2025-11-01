@@ -1,0 +1,267 @@
+﻿@page "/menu-layout"
+@attribute [Authorize(Roles = "/menu-layout")]
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using AppBO.Utility
+@using System.Security.Claims
+@using System.ComponentModel
+@using static AppBO.Utility.Utility
+@inject IMessageService message;
+@inject RestService rest;
+@inject ModalService ModalService
+@inject MenuLeftTransferService tMenuLeft
+
+<PageTitle>Menu Layout</PageTitle>
+
+<Divider Text="Menu Layout" Orientation="DividerOrientation.Left"></Divider>
+
+<Row Style="align-items: center">
+    <Col Span="21">
+    @if (OnDraged == true)
+        {
+            <Button Type="ButtonType.Primary" OnClick="Save">Save Change</Button>
+        }
+    </Col>
+    <Col Span="3">
+        <Flex Justify="FlexJustify.Center" Style="justify-content: end">
+
+
+
+            @if (tMenuLeft.Selected.Parent.MenuDetailId>0)
+                {
+                    <Button Type="ButtonType.Primary" Style="margin-right:10px" OnClick="Delete">Delete</Button>
+                    <Button Type="ButtonType.Primary" Style="margin-right:10px" OnClick="Edit">Edit</Button>
+                }
+
+                <Button Type="ButtonType.Primary" OnClick="AddNew">New</Button>
+            </Flex>
+
+        </Col>
+    </Row>
+
+    <div style="height: 450px; overflow-y: scroll">
+        <Tree @ref="tree"
+        DefaultExpandAll
+        Draggable
+        BlockNode
+        ShowIcon
+        DataSource="tMenuLeft.MenuElements"
+        TitleExpression="x => x.DataItem.Parent.MenuTitle"
+        ChildrenExpression="x => x.DataItem.Child"
+        IconExpression="x => x.DataItem.Parent.MenuIcon"
+        IsLeafExpression="x => x.DataItem.Child?.Count == 0"
+        KeyExpression="x => x.DataItem.Parent.MenuId.ToString()"
+        TItem="MenuElement"
+        OnDragEnd="e=> { }"
+        OnSelect="OnSelect"
+        OnUnselect="OnUnselect"
+        OnDrop="onDrop">
+        </Tree>
+    </div>
+
+
+    @code {
+
+    public bool OnDraged{ get; set; }
+    Tree<MenuElement> tree;
+    Tree<MenuElement> treeLeftMenu;
+
+    List<MenuElement> menus = new();
+    List<int> deleteItem = new List<int>();
+
+    public ClaimsPrincipal User;
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        tMenuLeft.OnChange += StateHasChanged;
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+
+        if (tMenuLeft.MenuElements.Any() == false)
+        {
+
+            try
+            {
+                List<MenuLeftModel> result = await rest.GET($"/api/menu/menu-detail-all", Token).ToModel<List<MenuLeftModel>>();
+                tMenuLeft.MenuElements = result.Select(MapToMenuElement).ToList();
+                tMenuLeft.NotifyStateChanged();
+            }
+            catch (Exception ex)
+            {
+                _ = message.Error(ex.Message);
+            }
+        }
+
+    }
+
+    void Save()
+    {
+        HideSaveChange();
+        List<MenuLeftModel> sorted = new List<MenuLeftModel>();
+        sorted = menus.Select(ConvertToLeftMenuModel).ToList();
+    }
+
+    void AddNew()
+    {
+        int Parent = (int)tMenuLeft.Menu.MenuDetailId;
+        tMenuLeft.Menu = new MenuLeftModel
+            {
+                Parent = Parent
+            };
+        tMenuLeft.Selected = new MenuElement(new MenuLeftModel());
+        tMenuLeft.NotifyStateChanged();
+        OpenMyDbEditor();
+    }
+
+    void Edit()
+    {
+        tMenuLeft.Menu = tMenuLeft.Selected.Parent;
+        tMenuLeft.NotifyStateChanged();
+        OpenMyDbEditor();
+    }
+
+    async Task Delete()
+    {
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Deleting...",
+                Key = key,
+                Duration = 0
+            };
+        _ = message.Loading(config);
+
+        ExtractMenu(tMenuLeft.Selected);
+
+        ApiResponse result = await rest.POST($"/api/menu/menu-detail-delete", deleteItem, Token);
+        config.Duration = 1;
+
+        if (result.Status == true)
+        {
+            RemoveItem(tMenuLeft.MenuElements, tMenuLeft.Selected);
+            tMenuLeft.Selected = new MenuElement(new MenuLeftModel());
+            tMenuLeft.Menu = new MenuLeftModel();
+            tMenuLeft.NotifyStateChanged();
+
+            config.Content = "Done";
+            _ = message.Success(config);
+        }
+        else
+        {
+            config.Content = result.Message;
+            _ = message.Error(config);
+        }
+    }
+
+    public void RemoveItem(List<MenuElement> menus, MenuElement menu)
+    {
+        foreach (var item in menus)
+        {
+            if (item.Parent.MenuDetailId == menu.Parent.MenuDetailId && item.Parent.MenuId == menu.Parent.MenuId)
+            {
+                menus.Remove(item);
+                break;
+            }
+
+            if (item.Child.Any() == true)
+            {
+                RemoveItem(item.Child, menu);
+            }
+        }
+    }
+
+    public void HideSaveChange(){
+        OnDraged = false;
+        StateHasChanged();
+    }
+
+    private async Task OpenMyDbEditor()
+    {
+        var options = new ModalOptions()
+            {
+                Title = "Add new",
+                MaskClosable = false,
+                OnOk = async (modalRef) =>
+                {
+                    // Perform your logic here, e.g., validate or process data
+                    // Do not call modalRef.Close() if you want to keep it open
+                    Console.WriteLine("OK pressed, but modal stays open!");
+                    // Return false or avoid closing logic to keep the modal open
+                },
+
+            };
+
+        MenuDetailModel menuDetailModel = Extention.MapObject<MenuDetailModel>(tMenuLeft.Menu);
+
+        _ = await ModalService.CreateModalAsync<MenuLayoutEditorModal, MenuDetailModel, string>(options, menuDetailModel);
+    }
+
+    #region tree utils
+
+
+    void onDrop(TreeEventArgs<MenuElement> e)
+    {
+        OnDraged = true;
+        StateHasChanged();
+        // List<MenuLeftModel> sorted = new List<MenuLeftModel>();
+        // sorted = menus.Select(ConvertToLeftMenuModel).ToList();
+    }
+
+    private void OnSelect(TreeEventArgs<MenuElement> e)
+    {
+        tMenuLeft.Selected = e.Node.DataItem;
+        StateHasChanged();
+        MenuLeftModel menu = Extention.MapObject<MenuLeftModel>(e.Node.DataItem.Parent);
+
+        tMenuLeft.Menu = menu;
+        tMenuLeft.NotifyStateChanged();
+        Console.WriteLine("OnSelect:" + e.Node.Key);
+    }
+
+    private void OnUnselect(TreeEventArgs<MenuElement> e)
+    {
+        tMenuLeft.Selected = new MenuElement(new MenuLeftModel());
+        tMenuLeft.Menu = new MenuLeftModel();
+        tMenuLeft.NotifyStateChanged();
+        Console.WriteLine("OnSelect:" + e.Node.Key);
+    }
+
+    // Convert LeftMenuModel to GameElement
+    private MenuElement MapToMenuElement(MenuLeftModel menu)
+    {
+        return new MenuElement(menu)
+            {
+                Child = menu.SubMenus?.Select(MapToMenuElement).ToList() ?? new List<MenuElement>()
+            };
+    }
+
+    // Convert back to LeftMenuModel from MenuElement
+    private MenuLeftModel ConvertToLeftMenuModel(MenuElement element)
+    {
+        return new MenuLeftModel
+            {
+                MenuId = element.Parent.MenuId,
+                MenuTitle = element.Parent.MenuTitle,
+                MenuIcon = element.Parent.MenuIcon,
+                MenuUrl = element.Parent.MenuUrl,
+                SubMenus = element.Child?.Select(ConvertToLeftMenuModel).ToList()
+            };
+    }
+
+    public void ExtractMenu(MenuElement menuItems)
+    {
+        deleteItem.Add((int)menuItems.Parent.MenuDetailId);
+
+        foreach (var item in menuItems.Child)
+        {
+            ExtractMenu(item);
+        }
+    }
+
+    #endregion tree utils
+}

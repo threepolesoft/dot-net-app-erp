@@ -1,0 +1,189 @@
+﻿﻿﻿@using System.Security.Claims
+@using Erp.Services
+@using Erp.Services.TransferService
+@using Erp.Utility
+@using AppBO.Models
+@using Microsoft.AspNetCore.SignalR.Client
+@inject AuthenticationStateProvider authStateProvider
+@inject NavigationManager Navigation
+@inherits LayoutComponentBase
+@inject LocalStorageService localStorageService
+@inject UserTransferService usert
+@inject SignalRService SignalRService
+@implements IDisposable
+
+<PageTitle>Home</PageTitle>
+
+<TopLoader />
+<AuthorizeView>
+    <NotAuthorized>
+
+        <Layout>
+            <Content Class="site-layout" Style="padding:0 0px; margin-top: 0px; ">
+                <div class="site-layout-background" style="padding: 0px; text-align:left; height: 100vh">
+                    @Body
+                </div>
+            </Content>
+            <FooterContent />
+        </Layout>
+    </NotAuthorized>
+
+    <Authorized>
+
+        <Layout>
+            <Sider Theme=siderTheme Style="overflow: auto;height: 100vh;position: fixed;left: 0;">
+                <div class="logo" style="padding: 15px">
+
+                    <h2 style="color:@(theme==MenuTheme.Dark? "#fff": "#000")">Admin Panel</h2>
+
+                </div>
+
+                <LeftMenu theme="theme" />
+            </Sider>
+
+            <Layout Class="site-layout" Style=" margin-left: 200px">
+                <TopMenu theme="theme" headerStyle="@headerStyle" />
+                <Content Class="site-layout" Style="padding:0 10px; margin-top: 75px;">
+                    <div class="site-layout-background" style="text-align:left; padding: 5px; min-height: 100vh">
+                        @Body
+                    </div>
+                </Content>
+                <FooterContent />
+            </Layout>
+
+
+        </Layout>
+
+        <Popover Style="position: fixed;bottom: 0;right: 0;margin: 50px 100px;" Placement="Placement.Top" ContentTemplate="@_content" Trigger="@(new[] {AntDesign.Trigger.Hover})">
+            <Button Class="shadow-button" Type="ButtonType.Primary" Size="ButtonSize.Large" Icon="tool" Shape="ButtonShape.Circle" />
+        </Popover>
+    </Authorized>
+
+</AuthorizeView>
+
+
+
+
+<style>
+    #components-layout-demo-fixed-sider .logo {
+    height: 32px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 16px;
+    }
+
+    .site-layout .site-layout-background {
+    background: #fff;
+    }
+
+    .shadow-button {
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2); /* Add a shadow */
+    transition: box-shadow 0.3s ease; /* Smooth hover effect */
+    }
+
+    .shadow-button:hover {
+    box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.3); /* Enhance shadow on hover */
+    }
+</style>
+
+@code {
+
+    const int ButtonWidth = 70;
+
+    private RenderFragment _content { get; set; }
+
+    MenuTheme theme { get; set; } = MenuTheme.Dark;
+    SiderTheme siderTheme = SiderTheme.Dark;
+    public ClaimsPrincipal User;
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+
+    public string headerStyle { get; set; } = "position: fixed; z-index: 1; width: 100%; display: flex;";
+
+    private void GetHeaderStyle()
+    {
+        if (theme == MenuTheme.Dark)
+        {
+            headerStyle = "position: fixed; z-index: 1; width: 100%; display: flex;background-color: #001529; color: #ffffff;";
+        }
+        else
+        {
+            headerStyle = "position: fixed; z-index: 1; width: 100%; display: flex; background-color: #ffffff; color: #000000;";
+        }
+
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        User = (await AuthStat)?.User;
+
+        string DeviceId = await localStorageService.GetItemAsync<string>("DeviceId");
+
+        if (string.IsNullOrEmpty(DeviceId))
+        {
+            // Generate a random alphabetic string (only a-z)
+
+            DeviceId = new string (
+                                    Guid.NewGuid()
+                                    .ToString("N") // Get a 32-character string
+                                    .Where(char.IsLetter) // Keep only alphabetic characters
+                                    .Take(12) // Take the first 2 letters
+                                    .ToArray() // Convert to array
+                                ); // Convert to lowercase
+
+            await localStorageService.SetItemAsync("DeviceId", DeviceId);
+        }
+
+        usert.DeviceId = DeviceId;
+
+        if (User.Identity.IsAuthenticated)
+        {
+            string wsId = $"{User.Identity.Name}-{usert.DeviceId}";
+            await SignalRService.ConnectAsync(wsId);
+            
+        }
+
+        authStateProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
+
+        _content = @<div style="width: 135px">
+        <Button Type="ButtonType.Link" @onclick="()=>changeTheme(true)">Default Theme</Button>
+        <Button Type="ButtonType.Link" @onclick="()=>changeTheme(false)">Dark Theme</Button>
+    </div>
+        ;
+    }
+
+    public void changeTheme(bool theme)
+    {
+        this.theme = theme ? MenuTheme.Light : MenuTheme.Dark;
+        this.siderTheme = theme ? SiderTheme.Light : SiderTheme.Dark;
+        GetHeaderStyle();
+    }
+
+    private async void OnAuthenticationStateChanged(Task<AuthenticationState> task)
+    {
+        var authState = await task;
+        var user = authState.User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            string wsId = $"{user.Identity.Name}-{usert.DeviceId}";
+            await SignalRService.ConnectAsync(wsId);
+        }
+        else
+        {
+            // Optionally stop/disconnect if logged out
+            if (SignalRService.HubConnection?.State == HubConnectionState.Connected)
+            {
+                await SignalRService.HubConnection.StopAsync();
+            }
+        }
+
+        // Force re-render layout if needed
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        authStateProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
+    }
+
+}

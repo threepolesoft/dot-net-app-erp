@@ -1,0 +1,262 @@
+﻿@page "/login"
+@using Erp.Services
+@using Erp.Services.TransferService
+@using Erp.Utility
+@using AppBO.Models
+@using AppBO.ModelsApi
+@using AppBO.Utility
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Mvc
+@using Microsoft.AspNetCore.WebUtilities
+@using System.Security.Claims
+@using System.IdentityModel.Tokens.Jwt
+@using System.Security.Cryptography
+@using System.Text
+@using static AppBO.Utility.Utility
+@inject NavigationManager navigationManager
+@inject RestService rest
+@inject AuthenticationStateProvider authStateProvider
+@inject MenuLeftTransferService tMenu
+@inject IConfiguration configuration
+
+<PageTitle>Login</PageTitle>
+
+<Layout>
+
+    <div class="limiter">
+        <div class="container-login100" style="background-image: url('bg-01.jpg');">
+            <div class="wrap-login100">
+                <span class="login100-form-logo">
+                    <Icon Type="@IconType.Outline.Lock" />
+                </span>
+
+                <h3 class="login100-form-title pt-1 pb-1" style="color: white">
+                    Log in
+                </h3>
+
+                <Form Model="@model" Name="form1" Method="HttpMethod.Post"
+                      LabelColSpan="8"
+                      WrapperColSpan="16"
+                      OnFinish="OnFinish"
+                      OnFinishFailed="OnFinishFailed">
+                    <FormItem Label="Username">
+                        <Input @bind-Value="@model.UserName" />
+                    </FormItem>
+                    <FormItem Label="Password">
+                        <InputPassword @bind-Value="@model.Password" />
+                    </FormItem>
+                    <FormItem WrapperColOffset="8" WrapperColSpan="16">
+                        <Checkbox @bind-Value="@model.RememberMe">Remember me</Checkbox>
+                    </FormItem>
+                    <FormItem WrapperColOffset="8" WrapperColSpan="16">
+                        <Button Type="ButtonType.Primary" Loading="@loading" HtmlType="submit">
+                            Login
+                        </Button>
+                    </FormItem>
+                    @if (!string.IsNullOrEmpty(Error))
+                    {
+                        <FormItem WrapperColOffset="8">
+
+                            <Alert Message=@Error Type="AlertType.Error" />
+
+                        </FormItem>
+                    }
+                </Form>
+
+
+
+            </div>
+        </div>
+    </div>
+</Layout>
+
+@code {
+    private LoginModel model { get; set; } = new();
+    private bool loading = false;
+    public string Error { get; set; }
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        User = (await AuthStat)?.User;
+
+        if (User.Identity.IsAuthenticated == true)
+        {
+            navigationManager.NavigateTo("/");
+        }
+    }
+
+
+    private async Task SignIn()
+    {
+        loading = true;
+        StateHasChanged();
+
+
+    }
+
+    private async void OnFinish(EditContext editContext)
+    {
+        loading = true;
+        StateHasChanged();
+
+        ApiResponse result = await rest.POST("/api/auth/login", model);
+
+        if (result.Status == true)
+        {
+            LoginModelRes loginModelRes = result.Data.ToObject<LoginModelRes>();
+
+            List<string> roles = new List<string>();
+
+            List<RoleModel> resRole = await rest.GET($"/api/role/get-user-role", loginModelRes.Token).ToModel<List<RoleModel>>();
+
+            if (resRole.Count == 0 && configuration["SystemAdmin"] == model.UserName)
+            {
+                resRole.Add(new RoleModel
+                {
+                    RoleName = "SystemAdmin"
+                });
+            };
+
+            if (resRole.Any())
+            {
+                foreach (var item in resRole)
+                {
+                    roles.Add(item.RoleName);
+                }
+
+                List<MenuLeftModel> menuDetail = await rest.GET($"/api/menu/menu-detail-by-role", loginModelRes.Token).ToModel<List<MenuLeftModel>>();
+                tMenu.UserMenu = menuDetail;
+
+                if (menuDetail.Count == 0 && configuration["SystemAdmin"] == model.UserName)
+                {
+                    // Assign a default menu if none are returned
+                    var  menus = new List<MenuLeftModel>
+                   {
+                        new MenuLeftModel
+                        {
+                            MenuId = 1,
+                            MenuTitle = "Access Control",
+                            MenuUrl = "",
+                            MenuIcon = "lock",
+                            IsView=true,
+                            SubMenus = new List<MenuLeftModel>{
+                                new MenuLeftModel
+                                {
+                                    MenuId = 2,
+                                    MenuTitle = "Menu",
+                                    MenuUrl = "/menu",
+                                    MenuIcon = "menu",
+                                    IsView=true,
+                                },
+                                new MenuLeftModel
+                                {
+                                    MenuId = 3,
+                                    MenuTitle = "Menu Layout",
+                                    MenuUrl = "/menu-layout",
+                                    MenuIcon = "menu-fold",
+                                    IsView=true,
+                                },
+                                new MenuLeftModel
+                                {
+                                    MenuId = 4,
+                                    MenuTitle = "Roles",
+                                    MenuUrl = "/roles",
+                                    MenuIcon = "control",
+                                    IsView=true,
+                                },
+                                new MenuLeftModel
+                                {
+                                    MenuId = 5,
+                                    MenuTitle = "User Role",
+                                    MenuUrl = "/user-role",
+                                    MenuIcon = "user",
+                                    IsView=true,
+                                },
+                                new MenuLeftModel
+                                {
+                                    MenuId = 6,
+                                    MenuTitle = "Role Access",
+                                    MenuUrl = "/role-access",
+                                    MenuIcon = "control",
+                                    IsView=true,
+                                }
+                            }
+                        }
+                    };
+
+                    roles.Add("/menu");
+                    roles.Add("/menu-layout");
+                    roles.Add("/roles");
+                    roles.Add("/user-role");
+                    roles.Add("/role-access");
+
+                    tMenu.UserMenu = menus;
+                }
+
+                if (tMenu.UserMenu.Any())
+                {
+                    var getUserSession = GetUserClaims(loginModelRes.Token, roles);
+                    if (getUserSession == null) return;
+
+                    var customAuthStateProvider = (AuthStateProvider)authStateProvider;
+                    await customAuthStateProvider.UpdateAuthenticationState(getUserSession);
+                    // navigationManager.NavigateTo("/", forceLoad: false, replace: true);
+                    model = new LoginModel();
+                }
+                else
+                {
+                    Error = "Access denied";
+                }
+
+            }
+            else
+            {
+                Error = "Access denied";
+            }
+
+        }
+        else
+        {
+            Error = result.Message;
+
+        }
+
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void OnFinishFailed(EditContext editContext)
+    {
+
+    }
+
+    private UserSessionModel GetUserClaims(string token, List<string> roles)
+    {
+        var handler = new JwtSecurityTokenHandler();
+        var readToken = handler.ReadJwtToken(token);
+        var claims = readToken.Claims;
+
+        var ss = new UserSessionModel()
+            {
+            UserName = claims.First(_ => _.Type == "ApplicationUserId").Value,
+                Token = token,
+                Roles = roles,
+            };
+
+        return ss;
+    }
+
+    // Convert LeftMenuModel to GameElement
+    private MenuElement MapToMenuElement(MenuLeftModel menu)
+    {
+        return new MenuElement(menu)
+            {
+                Child = menu.SubMenus?.Select(MapToMenuElement).ToList() ?? new List<MenuElement>()
+            };
+    }
+}

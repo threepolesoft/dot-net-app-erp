@@ -1,0 +1,71 @@
+﻿@using System.Security.Claims
+@using Erp.Utility
+@using AppBO.Models
+@inject AuthenticationStateProvider authStateProvider
+@inject NavigationManager Navigation
+
+<Header Style="@headerStyle">
+    <Menu Theme=theme Mode="MenuMode.Horizontal" DefaultSelectedKeys=@(new[]{"1"})>
+    </Menu>
+
+    <!-- Right Side: Profile Information -->
+    <div Style="display: flex; align-items: center; gap: 10px; position: absolute; right: 15%">
+
+        <Dropdown Overlay=@menu Placement="Placement.BottomRight" Arrow>
+            <!-- Profile Icon -->
+            <Avatar Size="@("2.5rem")" Icon="@IconType.Outline.User" />
+        </Dropdown>
+
+    </div>
+</Header>
+
+@code {
+    [Parameter]
+    public MenuTheme theme { get; set; }
+
+    [Parameter]
+    public string headerStyle{ get; set; }
+
+    public RenderFragment menu { get; set; }
+
+    public ClaimsPrincipal User;
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        User = (await AuthStat)?.User;
+
+        menu =
+        @<Menu>
+            <MenuItem>
+                @if (User.Identity.Name != null){
+                    <span>
+                        @User.Identity.Name
+                    </span>
+                }else{
+                    <span>
+                        Admin
+                    </span>
+                }
+
+                </MenuItem>
+                <MenuItem OnClick="LogoutAsync">
+                    <span>
+                        Logout
+                    </span>
+                </MenuItem>
+            </Menu>;
+
+    }
+
+    public async Task LogoutAsync()
+    {
+        var customAuthStateProvider = (AuthStateProvider)authStateProvider;
+        await customAuthStateProvider.UpdateAuthenticationState(new UserSessionModel());
+        Navigation.NavigateTo("/login");
+    }
+
+}

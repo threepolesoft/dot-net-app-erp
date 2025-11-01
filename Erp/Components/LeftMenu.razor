@@ -1,0 +1,230 @@
+﻿@using Erp.Services
+@using Erp.Services.TransferService
+@using System.Security.Claims
+@inject NavigationManager Navigation
+@inject MenuLeftTransferService tMenu
+@inject RestService rest;
+@using static AppBO.Utility.Utility
+@using AppBO.Models
+@using AppBO.Utility
+@using Erp.Utility
+
+<Menu Theme=theme Mode="MenuMode.Inline"
+      SelectedKeys="@selectedKeys.ToArray()"
+      DefaultOpenKeys=@selectedKeys
+      DefaultSelectedKeys=@selectedKeys>
+
+    @{
+        if (Loading)
+        {
+            <Skeleton Active="true"> </Skeleton>
+        }
+    }
+
+    @foreach (var menu in tMenu.UserMenu)
+    {
+        if (menu.SubMenus != null && menu.SubMenus.Count > 0)
+        {
+            <SubMenu Key="@menu.MenuDetailId.ToString()" Title="@menu.MenuTitle" TitleTemplate="@BuildSubMenuTitle(menu)">
+                @foreach (var sub in menu.SubMenus)
+                {
+                    <MenuItem Key="@($"{sub.MenuUrl}")">
+                        <Icon Type="@sub.MenuIcon" />
+                        <NavLink class="nav-link" href="@($"{sub.MenuUrl}")" Match="NavLinkMatch.All">
+                            <span class="nav-text">@sub.MenuTitle</span>
+                        </NavLink>
+                    </MenuItem>
+                }
+            </SubMenu>
+        }
+        else
+        {
+            <MenuItem Key="@($"{menu.MenuUrl}")">
+                <Icon Type="@menu.MenuIcon" />
+                <NavLink class="nav-link" href="@($"{menu.MenuUrl}")" Match="NavLinkMatch.All">
+                    <span class="nav-text">@menu.MenuTitle</span>
+                </NavLink>
+            </MenuItem>
+        }
+    }
+
+</Menu>
+
+@* 
+<Menu Theme=theme Mode="MenuMode.Inline"
+      SelectedKeys="@Selected.ToArray()"
+      DefaultOpenKeys=@selectedKeys
+      DefaultSelectedKeys=@selectedKeys>
+
+    <MenuItem Key="/">
+        <Icon Type="@IconType.Outline.Home" />
+        <NavLink class="nav-link" href="/" Match="NavLinkMatch.All">
+            <span class="nav-text">Home</span>
+        </NavLink>
+    </MenuItem>
+
+    <SubMenu Key="/lawyer" TitleTemplate="@Lawyer">
+        <MenuItem Key="/config-setting">
+            <Icon Type="@IconType.Outline.Setting" />
+            <NavLink class="nav-link" href="/config-setting" Match="NavLinkMatch.All">
+                <span class="nav-text">Setting</span>
+            </NavLink>
+        </MenuItem>
+        <MenuItem Key="/lawyer-config">
+            <Icon Type="@IconType.Outline.User" />
+            <NavLink class="nav-link" href="/lawyer-config" Match="NavLinkMatch.All">
+                <span class="nav-text">Lawyer Config</span>
+            </NavLink>
+        </MenuItem>
+        <MenuItem Key="/device-config">
+            <Icon Type="@IconType.Outline.Mobile" />
+            <NavLink class="nav-link" href="/device-config" Match="NavLinkMatch.All">
+                <span class="nav-text">Device Config</span>
+            </NavLink>
+        </MenuItem>
+    </SubMenu>
+
+    <SubMenu Key="/access-control" TitleTemplate="@AccessControl">
+        <MenuItem Key="/menu">
+            <Icon Type="@IconType.Outline.Menu" />
+            <NavLink class="nav-link" href="/menu" Match="NavLinkMatch.All">
+                <span class="nav-text">Menu</span>
+            </NavLink>
+        </MenuItem>
+        <MenuItem Key="/menu-layout">
+            <Icon Type="@IconType.Outline.MenuUnfold" />
+            <NavLink class="nav-link" href="/menu-layout" Match="NavLinkMatch.All">
+                <span class="nav-text">Menu Layout</span>
+            </NavLink>
+        </MenuItem>
+        <MenuItem Key="/roles">
+            <Icon Type="@IconType.Outline.OrderedList" />
+            <NavLink class="nav-link" href="/roles" Match="NavLinkMatch.All">
+                <span class="nav-text">Roles</span>
+            </NavLink>
+        </MenuItem>
+        <MenuItem Key="/user-role">
+            <Icon Type="@IconType.Outline.Control" />
+            <NavLink class="nav-link" href="/user-role" Match="NavLinkMatch.All">
+                <span class="nav-text">User Role</span>
+            </NavLink>
+        </MenuItem>
+        <MenuItem Key="/role-access">
+            <Icon Type="@IconType.Outline.Control" />
+            <NavLink class="nav-link" href="/role-access" Match="NavLinkMatch.All">
+                <span class="nav-text">Role Access</span>
+            </NavLink>
+        </MenuItem>
+    </SubMenu>
+
+    <MenuItem Key="/profile">
+        <Icon Type="@IconType.Outline.User" />
+        <NavLink class="nav-link" href="/profile" Match="NavLinkMatch.All">
+            <span class="nav-text">Profile</span>
+        </NavLink>
+    </MenuItem>
+</Menu> *@
+
+@code {
+    [Parameter]
+    public MenuTheme theme { get; set; }
+
+    public List<string> Selected { get; set; } = new List<string>();
+    private List<string> selectedKeys { get; set; } = new List<string>();
+
+    public bool Loading { get; set; }
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override void OnInitialized()
+    {
+
+        Loading = true;
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+
+        if (!tMenu.UserMenu.Any())
+        {
+            List<MenuLeftModel> menuDetail = await rest.GET($"/api/menu/menu-detail-by-role", Token).ToModel<List<MenuLeftModel>>();
+            tMenu.UserMenu = menuDetail;
+        }
+
+        SetActiveMenu();
+        Loading = false;
+        StateHasChanged();
+
+
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Navigation.LocationChanged += (sender, args) => SetActiveMenu();
+        }
+
+    }
+
+    private RenderFragment BuildSubMenuTitle(MenuLeftModel menu) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.OpenComponent<Icon>(1);
+        builder.AddAttribute(2, "Type", menu.MenuIcon); // Set the icon for the SubMenu
+        builder.CloseComponent();
+        builder.AddContent(3, " "); // Optional space between icon and title
+        builder.AddContent(4, menu.MenuTitle); // Add the title next to the icon
+        builder.CloseElement();
+    };
+
+    private void SetActiveMenu()
+    {
+        Selected = new List<string>();
+        selectedKeys = new List<string>();
+        // Update the selected keys based on the current URI
+        string url = Navigation.Uri.Replace(Navigation.BaseUri, "/");
+
+        var parentMenuDetailIds = FindParentMenuDetailIds(tMenu.UserMenu, url);
+
+        selectedKeys.AddRange(parentMenuDetailIds);
+        // Selected.AddRange(parentMenuDetailIds);
+
+        selectedKeys.Add(url);
+        // Selected.Add(url);
+
+        //Selected.Add(Navigation.Uri.Replace(Navigation.BaseUri, "/"));
+        StateHasChanged();  // Ensure UI re-render after changing selectedKeys
+    }
+
+
+    public static List<string> FindParentMenuDetailIds(List<MenuLeftModel> menus, string menuUrl)
+    {
+        List<string> parentMenuDetailIds = new List<string>();
+
+        foreach (var menu in menus)
+        {
+            if (menu.MenuUrl == menuUrl)
+            {
+                parentMenuDetailIds.Add(menu.Parent.ToString());
+                break; // Exit the loop once the menu is found
+            }
+
+            // Recursively check submenus
+            if (menu.SubMenus != null && menu.SubMenus.Count > 0)
+            {
+                parentMenuDetailIds.AddRange(FindParentMenuDetailIds(menu.SubMenus, menuUrl));
+            }
+        }
+
+        return parentMenuDetailIds.Distinct().ToList(); // Remove duplicates if any
+    }
+
+    public static MenuLeftModel FindMenuById(List<MenuLeftModel> menus, int menuDetailId)
+    {
+        return menus.FirstOrDefault(m => m.MenuDetailId == menuDetailId);
+    }
+}

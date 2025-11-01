@@ -1,0 +1,204 @@
+﻿@using System.ComponentModel.DataAnnotations;
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@inherits FeedbackComponent<MenuModel, string>
+@inject MenuTransferService tMenu;
+@inject IMessageService _message
+@inject RestService rest;
+
+<Form @ref="form"
+Model="@model"
+LabelColSpan="8"
+WrapperColSpan="16"
+ValidateOnChange="@true"
+OnFinish="OnFinish"
+OnFinishFailed="OnFinishFailed"
+RequiredMark="FormRequiredMark.Required">
+
+    <FormItem Label="Menu Title">
+        <Input @bind-Value="@context.MenuTitle" Placeholder="Menu title" AutoFocus/>
+    </FormItem>
+
+    <FormItem Label="Menu Url">
+        <Input @bind-Value="@context.MenuUrl" Placeholder="Menu url" />
+    </FormItem>
+
+    <FormItem Label="Menu Icon">
+        <Input @bind-Value="@context.MenuIcon" Placeholder="Menu icon" />
+    </FormItem>
+
+    <FormItem Label="Scop">
+        <Select @bind-Value="@context.Scope"
+        DefaultValue="@context.Scope"
+        Style="width: 120px;"
+        TItemValue="string"
+        TItem="string">
+            <SelectOptions>
+                <SelectOption Value="@(keyValue.RoleScopeApp)" Label="@keyValue.RoleScopeApp.ToUpper()" />
+                <SelectOption Value="@(keyValue.RoleScopeAdmin)" Label="@keyValue.RoleScopeAdmin.ToUpper()" />
+            </SelectOptions>
+        </Select>
+    </FormItem>
+
+    <FormItem Label="Active">
+        <Checkbox 
+        Value="@context.IsActive"
+        OnChange="(val)=>ChangeActive(val)" />
+    </FormItem>
+
+</Form>
+
+
+@code {
+
+    private Form<MenuModel> form;
+
+    string config;
+
+    string value;
+
+    public MenuModel model;
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        model = new MenuModel
+            {
+                MenuId = this.Options.MenuId,
+                MenuUrl = this.Options.MenuUrl,
+                MenuTitle = this.Options.MenuTitle,
+                MenuIcon = this.Options.MenuIcon,
+                Scope = this.Options.Scope,
+                IsActive = this.Options.IsActive
+            };
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+    }
+
+
+    public override async Task OnFeedbackOkAsync(ModalClosingEventArgs args)
+    {
+        if (FeedbackRef is ConfirmRef confirmRef)
+        {
+            await confirmRef.UpdateConfigAsync();
+        }
+        else if (FeedbackRef is ModalRef modalRef)
+        {
+            if (form.Validate() == true)
+            {
+                form.Submit();
+                modalRef.Config.ConfirmLoading = true;
+                await modalRef.UpdateConfigAsync();
+            }
+
+        }
+
+        // only the input's value equals the initialized value, the OK button will close the confirm dialog box
+        if (value != config)
+            args.Cancel = true;
+        else
+            // method 1(not recommended): await (FeedbackRef as ConfirmRef<string>)!.OkAsync(value);
+            // method 2: await (FeedbackRef as IOkCancelRef<string>)!.OkAsync(value);
+            //await base.OkCancelRefWithResult!.OnOk(value);
+
+            await base.OnFeedbackOkAsync(args);
+    }
+
+    public void ChangeActive(bool val)
+    {
+        model.IsActive = val;
+    }
+
+    private async void OnFinish(EditContext editContext)
+    {
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Saving...",
+                Key = key,
+                Duration = 0
+            };
+
+        _ = _message.Loading(config);
+
+        MenuModel model_ = (MenuModel)editContext.Model;
+
+        try
+        {
+            ApiResponse result = await rest.POST($"/api/menu/save-menu", model_, Token);
+
+            if (FeedbackRef is ModalRef modalRef)
+            {
+                modalRef.Config.ConfirmLoading = false;
+                await modalRef.UpdateConfigAsync();
+            }
+
+            if (result.Status == true)
+            {
+                MenuModel added = result.Data.ToObject<MenuModel>();
+
+                if (model_.MenuId == 0)
+                {
+                    tMenu.Menus.Add(added);
+                }
+                else
+                {
+                    foreach (var item in tMenu.Menus)
+                    {
+                        if (item.MenuId == model_.MenuId)
+                        {
+                            item.MenuUrl = model_.MenuUrl;
+                            item.MenuTitle = model_.MenuTitle;
+                            item.MenuIcon = model_.MenuIcon;
+                            item.Scope = model_.Scope;
+                            item.IsActive = model_.IsActive;
+                            break;
+                        }
+                    }
+                }
+
+                tMenu.NotifyStateChanged();
+                config.Content = "Done";
+                config.Duration = 1;
+                _ = _message.Success(config);
+
+            }
+            else
+            {
+                config.Content = result.Message;
+                config.Duration = 2;
+                _ = _message.Error(config);
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = _message.Error(ex.Message);
+        }
+    }
+
+    private void OnFinishFailed(EditContext editContext)
+    {
+
+    }
+
+    /// <summary>
+    /// If you want <b>Dispose</b> to take effect every time it is closed in Modal, which created by ModalService,
+    /// set <b>ModalOptions.DestroyOnClose = true</b>
+    /// </summary>
+    /// <param name="disposing"></param>
+    protected override void Dispose(bool disposing)
+    {
+        Console.WriteLine("Dispose");
+        base.Dispose(disposing);
+    }
+}

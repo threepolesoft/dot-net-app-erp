@@ -1,0 +1,276 @@
+﻿@page "/user-menu"
+@attribute [Authorize(Roles = "/user-menu")]
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.ModelsApi
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@attribute [Authorize]
+@inject IMessageService message;
+@inject SettingTransferService tSettings;
+@inject RestService rest;
+
+<PageTitle>User Menu</PageTitle>
+
+<Divider Text="User Menu" Orientation="DividerOrientation.Left"></Divider>
+
+<Row>
+    <Col Span="9" />
+    <Col Span="6">
+    <Search Placeholder="Input layer code"
+            Size="InputSize.Large"
+            Loading="loading"
+            Type="InputType.Number"
+            MaxLength="6"
+            AllowClear
+            AutoFocus
+            EnterButton="@("Search")" @bind-Value="@txtValue"
+            OnClear="OnClear"
+            OnChange="OnSearch"
+            OnSearch="OnSearch" />
+
+    </Col>
+</Row>
+
+<Table DataSource="@tSettings.DeviceSettingAll.DeviceSettings"
+       PageSize="10"
+       AutoColIndexes="true"
+       PaginationPosition="topLeft"
+       Loading="loading"
+       Size="TableSize.Small"
+       AutoHeight>
+
+
+    <PaginationTemplate>
+        <Row Style="align-items: center">
+            <Col Span="22">
+            <Pagination Class="@(context.PaginationClass + " my-custom-pagination")"
+                        Total="context.Total"
+                        PageSize="context.PageSize"
+                        Current="context.PageIndex"
+                        ShowSizeChanger
+                        OnChange="context.HandlePageChange" />
+            </Col>
+            <Col Span="2">
+            <Flex Justify="FlexJustify.Center" Style="justify-content: center">
+                @* <Button Type="ButtonType.Primary" OnClick="Reset">Reset</Button> *@
+            </Flex>
+
+            </Col>
+        </Row>
+
+    </PaginationTemplate>
+
+    <HeaderTemplate>
+        <TableRow>
+            <SimpleTableHeader>Device Information</SimpleTableHeader>
+            <SimpleTableHeader>
+                <Row>
+                    <Col Span="24" Style="text-align: center">
+                    <span>Action</span>
+
+                    </Col>
+                </Row>
+                <Row Style="align-items: center; font-weight: normal !important; background-color: antiquewhite">
+                    <Col Span="24">
+
+                    @if (tSettings.DeviceSettingAll.UserInfo != null)
+                        {
+
+                            @foreach (var item in tSettings.DeviceSettingAll.UserSettings)
+                            {
+
+                                bool status = @Convert.ToBoolean(item.Value);
+
+                            <Checkbox Size="InputSize.Large"
+                                      Label="@item.SettingTitle"
+                                      Checked="@status"
+                                      CheckedChange="(value)=>CheckChangedAll(item, value)"
+                                      Style="user-select: none; margin: 10px" />
+                            }
+                        }
+                    </Col>
+                </Row>
+            </SimpleTableHeader>
+        </TableRow>
+    </HeaderTemplate>
+
+    <EmptyTemplate>
+        @if (loading == false)
+        {
+            <Empty Simple />
+        }
+
+    </EmptyTemplate>
+
+    <ColumnDefinitions>
+        <PropertyColumn Property="c=>c.DeviceName" Title="Device" Ellipsis Sortable Filterable Width="240" />
+        <ActionColumn Title="Action">
+            @foreach (var item in context.Settings)
+            {
+                bool status = @Convert.ToBoolean(item.Value);
+                <Checkbox Size="InputSize.Large"
+                          Label="@item.SettingTitle"
+                          Value="@status"
+                          CheckedChange="(value)=>CheckChangedDevice(context.Settings, item, context.DeviceId, value)"
+                          Style="user-select: none; margin: 10px" />
+            }
+        </ActionColumn>
+    </ColumnDefinitions>
+</Table>
+@code {
+    private string txtValue { get; set; }
+    private bool loading { get; set; } = false;
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        OnClear();
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+    }
+
+    public void OnClear()
+    {
+        tSettings.DeviceSettingAll = new DeviceSettingAllRes();
+        StateHasChanged();
+    }
+
+    public async Task OnSearch()
+    {
+        if (string.IsNullOrEmpty(txtValue))
+        {
+            return;
+        }
+
+
+        loading = true;
+        tSettings.DeviceSettingAll = new DeviceSettingAllRes();
+        StateHasChanged();
+
+        ApiResponse result = await rest.GET($"/api/setting/get-device-setting-all?UserId={txtValue}", Token);
+
+        if (result.Status == true)
+        {
+            tSettings.DeviceSettingAll = result.Data.ToObject<DeviceSettingAllRes>();
+        }
+        else
+        {
+
+        }
+
+        loading = false;
+        StateHasChanged();
+    }
+
+    public async void CheckChangedAll(Setting setting, bool value)
+    {
+
+        foreach (var item in tSettings.DeviceSettingAll.UserSettings)
+        {
+            if (item.SettingName == setting.SettingName)
+            {
+                item.Value = value.ToString();
+                break;
+            }
+        }
+
+        foreach (var item in tSettings.DeviceSettingAll.DeviceSettings)
+        {
+            foreach (var item2 in item.Settings)
+            {
+                if (item2.SettingName == setting.SettingName)
+                {
+                    item2.Value = value.ToString();
+                    break;
+                }
+            }
+        }
+
+        var userSettings = tSettings.DeviceSettingAll.UserSettings
+        .Select(m => new
+        {
+            UserId = txtValue,
+            m.SettingId,
+            m.Value
+        })
+        .ToList();
+
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Applying...",
+                Key = key,
+                Duration = 0
+            };
+
+        _ = message.Loading(config);
+
+        ApiResponse result = await rest.POST($"/api/setting/save-user-setting", userSettings, Token);
+        config.Duration = 1;
+        if (result.Status == true)
+        {
+            config.Content = "Apply success!";
+            _ = message.Success(config);
+        }
+        else
+        {
+            config.Content = "Apply fail";
+            _ = message.Error(config);
+        }
+
+    }
+
+    public async void CheckChangedDevice(List<Setting> settings, Setting setting, string DeviceId, bool value)
+    {
+
+        foreach (var item2 in settings)
+        {
+            if (item2.SettingName == setting.SettingName)
+            {
+                item2.Value = value.ToString();
+                break;
+            }
+        }
+
+        var deviceSettings = settings
+        .Select(m => new
+        {
+            UserId = txtValue,
+            DeviceId = DeviceId,
+            m.SettingId,
+            m.Value
+        })
+        .ToList();
+
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Applying...",
+                Key = key,
+                Duration = 0
+            };
+        _ = message.Loading(config);
+
+        ApiResponse result = await rest.POST($"/api/setting/save-device-setting", deviceSettings, Token);
+        config.Duration = 1;
+        if (result.Status == true)
+        {
+            config.Content = "Apply success!";
+
+            _ = message.Success(config);
+        }
+        else
+        {
+            config.Content = "Apply fail";
+            _ = message.Error(config);
+        }
+    }
+}

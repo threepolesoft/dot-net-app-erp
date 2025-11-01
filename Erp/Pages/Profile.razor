@@ -1,0 +1,72 @@
+﻿@page "/profile"
+@attribute [Authorize(Roles = "/profile")]
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.ModelsApi
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@attribute [Authorize]
+@inject IMessageService message;
+@inject RoleTransferService tRole;
+@inject RestService rest;
+@inject ModalService ModalService
+
+<PageTitle>Profile</PageTitle>
+
+<div class="profile-page">
+    <div class="content">
+        <div class="content__cover">
+            <div class="content__avatar"></div>
+            <div class="content__bull">
+                <span></span><span></span><span></span><span></span><span></span>
+            </div>
+        </div>
+        <div class="content__actions">
+
+        </div>
+        <div class="content__title">
+            <h1>@userModel.FullName</h1>
+        </div>
+
+        <div class="content__button">
+            @* <Button>Edit</Button> *@
+        </div>
+    </div>
+</div>
+
+@code {
+
+    private bool loading { get; set; } = false;
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    public ApplicationUserModel userModel { get; set; } = new ApplicationUserModel();
+
+    protected async override Task OnInitializedAsync()
+    {
+        loading = true;
+        StateHasChanged();
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+
+        try
+        {
+            ApplicationUserModel result = await rest.GET($"/api/auth/user-info", Token).ToModel<ApplicationUserModel>();
+            userModel = result;
+
+        }
+        catch (Exception ex)
+        {
+            message.Error(ex.Message);
+        }
+
+        loading = false;
+    }
+}

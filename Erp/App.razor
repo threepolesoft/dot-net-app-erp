@@ -1,0 +1,58 @@
+﻿@using Erp.Services
+﻿﻿﻿@using Microsoft.AspNetCore.Components.Authorization
+@using System.Reflection
+@inject NavigationManager Navigation
+@inject Services.PluginLoader Loader
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly" AdditionalAssemblies="@pluginAssemblies">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <NotAuthorized>
+                    @{
+                        Navigation.NavigateTo("/login");
+                    }
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <p role="alert">Sorry, there's nothing at this address.</p>
+            </LayoutView>
+        </NotFound>
+    </Router>
+
+    <AntContainer/>
+</CascadingAuthenticationState>
+
+@code {
+    private Assembly[] pluginAssemblies;
+
+
+    // protected override void OnInitialized()
+    // {
+    //     var pluginPath = Path.Combine(AppContext.BaseDirectory, "wwwroot", "plugins", "RazorClassLibrary1.dll");
+
+    //     var routeEntries = Loader.LoadPluginRoutes(pluginPath);
+    //     pluginAssemblies = routeEntries
+    //         .Select(entry => entry.ComponentType.Assembly)
+    //         .Distinct()
+    //         .ToArray();
+
+    // }
+
+    protected override async Task OnInitializedAsync()
+    {
+        pluginAssemblies = await Task.Run(() =>
+        {
+            var pluginPaths = Directory.GetFiles(AppContext.BaseDirectory + "wwwroot/plugins", "*.dll");
+            return pluginPaths
+                .SelectMany(path => Loader.LoadPluginRoutes(path))
+                .Select(e => e.ComponentType.Assembly)
+                .Distinct()
+                .ToArray();
+        });
+    }
+}

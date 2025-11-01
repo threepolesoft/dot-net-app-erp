@@ -1,0 +1,192 @@
+﻿@page "/roles"
+@attribute [Authorize(Roles = "/roles")]
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.ModelsApi
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@attribute [Authorize]
+@inject IMessageService message;
+@inject RoleTransferService tRole;
+@inject RestService rest;
+@inject ModalService ModalService
+
+<PageTitle>Roles</PageTitle>
+
+<Divider Text="Roles" Orientation="DividerOrientation.Left"></Divider>
+
+<Table DataSource="@tRole.Roles.Where(m=>m.IsDelete==false)"
+       PageSize="10"
+       AutoColIndexes="true"
+       PaginationPosition="topLeft"
+       Loading="loading"
+       Size="TableSize.Small"
+       AutoHeight>
+
+
+    <PaginationTemplate>
+        <Row Style="align-items: center">
+            <Col Span="22">
+            <Pagination Class="@(context.PaginationClass + " my-custom-pagination")"
+                        Total="context.Total"
+                        PageSize="context.PageSize"
+                        Current="context.PageIndex"
+                        ShowSizeChanger
+                        OnChange="context.HandlePageChange" />
+            </Col>
+            <Col Span="2">
+            <Flex Justify="FlexJustify.Center" Style="justify-content: center">
+                <Button Type="ButtonType.Primary" OnClick="AddNew">New</Button>
+            </Flex>
+
+            </Col>
+        </Row>
+    </PaginationTemplate>
+
+    <EmptyTemplate>
+        @if (loading == false)
+        {
+            <Empty Simple />
+        }
+
+    </EmptyTemplate>
+
+    <ColumnDefinitions>
+        <PropertyColumn Property="c=>c.RoleTitle" Title="Name" Ellipsis Sortable Filterable>
+            <Space Size=@("middle")>
+                <SpaceItem>
+                    <Icon Style="cursor: pointer; margin-right: 10px" Type="edit"
+                    OnClick="() => Edit(context)"
+                    Width="20" Height="20" Theme="IconThemeType.Fill" />
+                </SpaceItem>
+                <SpaceItem>
+                    <Popconfirm Title="Are you sure you want to delete?"
+                    OnConfirm="()=> Delete(context)"
+                    OkText="Yes"
+                    CancelText="No">
+                        <Icon Style="cursor: pointer" Type="delete" Width="20" Height="20" Theme="IconThemeType.Fill" />
+                    </Popconfirm>
+                </SpaceItem>
+                <SpaceItem>
+                    <span style="margin-left: 10px">@context.RoleName</span>
+                </SpaceItem>
+            </Space>
+        </PropertyColumn>
+        <PropertyColumn Property="c=>c.RoleTitle" Title="Title" Ellipsis Sortable Filterable>
+            <Space Size=@("middle")>
+                <SpaceItem>
+                    <span style="margin-left: 10px">@context.RoleTitle</span>
+                </SpaceItem>
+            </Space>
+        </PropertyColumn>
+        <PropertyColumn Property="c=>c.Scope" Title="Scope" Sortable Filterable />
+
+        <PropertyColumn Property="c=>c.IsActive" Title="Active">
+            <Space Size=@("middle")>
+                <SpaceItem>
+                    <span style="margin-left: 10px">@context.IsActive</span>
+                </SpaceItem>
+            </Space>
+        </PropertyColumn>
+    </ColumnDefinitions>
+</Table>
+
+@code {
+
+    private string txtValue { get; set; }
+    private bool loading { get; set; } = false;
+
+    public ClaimsPrincipal User;
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        loading = true;
+        StateHasChanged();
+        tRole.OnChange += StateHasChanged;
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+
+        try
+        {
+            List<RoleModel> result = await rest.GET($"/api/role/all", Token).ToModel<List<RoleModel>>();
+
+            tRole.Roles = result;
+        }
+        catch (Exception ex)
+        {
+            message.Error(ex.Message);
+        }
+
+        loading = false;
+    }
+
+    async Task AddNew()
+    {
+        tRole.Role = new RoleModel()
+            {
+                Scope = keyValue.RoleScopeApp
+            };
+        OpenMyDbEditor();
+    }
+
+    async Task Edit(RoleModel row)
+    {
+        tRole.Role = row;
+        OpenMyDbEditor();
+    }
+
+    async Task Delete(RoleModel row)
+    {
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Deleting...",
+                Key = key,
+                Duration = 0
+            };
+        message.Loading(config);
+
+        RoleModel roleModel = Extention.MapObject<RoleModel>(row);
+        roleModel.IsDelete = true;
+
+        ApiResponse result = await rest.POST($"/api/role/save-role", roleModel, Token);
+        if (result.Status == true)
+        {
+            row.IsDelete = true;
+            config.Content = "Done";
+            message.Success(config);
+        }
+        else
+        {
+            config.Content = result.Message;
+            config.Duration = 2;
+            message.Error(config);
+        }
+    }
+
+    private async Task OpenMyDbEditor()
+    {
+        var options = new ModalOptions()
+            {
+                Title = tRole.Role.RoleId == 0 ? "Add new role" : "Update role",
+                MaskClosable = false,
+                OnOk = async (modalRef) =>
+                {
+                    // Perform your logic here, e.g., validate or process data
+                    // Do not call modalRef.Close() if you want to keep it open
+                    Console.WriteLine("OK pressed, but modal stays open!");
+                    // Return false or avoid closing logic to keep the modal open
+                },
+
+            };
+
+        var confirmRef = await ModalService.CreateModalAsync<RoleEditorModal, RoleModel, string>(options, tRole.Role);
+    }
+}

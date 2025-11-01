@@ -1,0 +1,107 @@
+﻿@page "/"
+@using System.Security.Claims
+@attribute [Authorize]
+@inject IJSRuntime JS
+@using Erp.Services.TransferService
+@using Microsoft.AspNetCore.SignalR.Client
+@using Newtonsoft.Json
+@using System.Collections.Concurrent
+@inject IConfiguration configuration;
+@inject SignalRService SignalRService
+@inject UserTransferService usert
+@implements IDisposable
+
+<PageTitle>Index</PageTitle>
+
+<div style="">
+<h1>Active User!</h1>
+<br />
+
+<Row Gutter="16">
+    <Col Span="8">
+    <Statistic Title="All Users" Value="@clientConnections.Count" />
+    </Col>
+    <Col Span="8">
+    <Statistic Title="Android" Value="@clientAndroid.Count" />
+    </Col>
+    <Col Span="8">
+    <Statistic Title="Web" Value="@clientWeb.Count" />
+    </Col>
+</Row>
+
+<ul>
+    @foreach (var entry in clientConnections)
+    {
+        <li>
+            <strong>@entry.Key</strong>
+            @* <ul> *@
+            @*     @foreach (var connectionId in entry.Value) *@
+            @*     { *@
+            @*         <li>@connectionId</li> *@
+            @*     } *@
+            @* </ul> *@
+        </li>
+    }
+</ul>
+</div>
+
+@code {
+    private string? message;
+
+    public ClaimsPrincipal User;
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+
+    private ConcurrentDictionary<string, List<string>> clientConnections = new ConcurrentDictionary<string, List<string>>();
+    private ConcurrentDictionary<string, string> clientAndroid = new();
+    private ConcurrentDictionary<string, string> clientWeb = new();
+
+    private Action<ConcurrentDictionary<string, List<string>>,
+               ConcurrentDictionary<string, string>,
+               ConcurrentDictionary<string, string>> _activeUserHandler;
+
+    protected override async Task OnInitializedAsync()
+    {
+        User = (await AuthStat)?.User;
+
+        string wsId = $"{User.Identity.Name}-{usert.DeviceId}";
+
+        //await SignalRService.ConnectAsync(wsId);
+
+        _activeUserHandler = (users, android, web) =>
+            {
+                HandleActiveUserUpdate(users, android, web);
+            };
+
+        SignalRService.OnConnected += () =>
+        {
+
+            SignalRService.On("ActiveUser", _activeUserHandler);
+        };
+
+        if (SignalRService.HubConnection is not null)
+        {
+            SignalRService.On("ActiveUser", _activeUserHandler);
+
+            SignalRService.HubConnection.SendAsync("Init");
+        }
+
+    }
+
+    private void HandleActiveUserUpdate(
+        ConcurrentDictionary<string, List<string>> users,
+        ConcurrentDictionary<string, string> android,
+        ConcurrentDictionary<string, string> web)
+    {
+        clientConnections = users;
+        clientAndroid = android;
+        clientWeb = web;
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Unsubscribe on Dispose
+    public void Dispose()
+    {
+        SignalRService.Off("ActiveUser", _activeUserHandler);
+    }
+}

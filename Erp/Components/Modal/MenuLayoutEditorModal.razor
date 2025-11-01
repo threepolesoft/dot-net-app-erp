@@ -1,0 +1,294 @@
+﻿@using System.ComponentModel.DataAnnotations;
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@inherits FeedbackComponent<MenuDetailModel, string>
+@inject MenuTransferService tMenu;
+@inject IMessageService _message
+@inject RestService rest;
+@inject MenuTransferService tMenu;
+@inject MenuLeftTransferService tMenuLeft
+
+<Form @ref="form"
+Model="@model"
+LabelColSpan="8"
+WrapperColSpan="16"
+ValidateOnChange="@true"
+OnFinish="OnFinish"
+OnFinishFailed="OnFinishFailed"
+RequiredMark="FormRequiredMark.Required">
+
+    @if (model.MenuDetailId == 0)
+    {
+        <FormItem Label="Menu">
+
+            <Select DataSource="@tMenu.Menus"
+            @bind-Value="@context.MenuId"
+            LabelName="@nameof(MenuModel.MenuTitle)"
+            ValueName="@nameof(MenuModel.MenuId)"
+            Placeholder="Select a menu"
+            AllowClear>
+            </Select>
+
+        </FormItem>
+    }
+
+
+    <FormItem Label="IsView">
+        <Checkbox 
+        @bind-Value="@context.IsView" />
+    </FormItem>
+
+</Form>
+
+
+@code {
+
+    private Form<MenuDetailModel> form;
+    public MenuDetailModel model;
+    string config;
+    string value;
+
+    List<MenuModel> menus = new List<MenuModel>();
+
+    public ClaimsPrincipal User;
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        tMenu.OnChange += StateHasChanged;
+        tMenuLeft.OnChange += StateHasChanged;
+
+        model = new MenuDetailModel
+            {
+                MenuDetailId = this.Options.MenuDetailId,
+                MenuId = this.Options.MenuId,
+                Parent = this.Options.Parent,
+                Serial = this.Options.Serial,
+                MenuUrl = this.Options.MenuUrl,
+                MenuTitle = this.Options.MenuTitle,
+                MenuIcon = this.Options.MenuIcon,
+                Scope = this.Options.Scope,
+                IsView = this.Options.IsView,
+                IsActive = this.Options.IsActive
+            };
+
+        // _message.Info(model.Parent.ToString());
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value ?? "";
+
+        if (!tMenu.Menus.Any())
+        {
+            menus = await rest.GET($"/api/menu/all", Token).ToModel<List<MenuModel>>();
+            menus.ForEach(m => m.MenuName = "");
+            tMenu.Menus = menus;
+            tMenu.NotifyStateChanged();
+        }
+
+    }
+
+
+    public override async Task OnFeedbackOkAsync(ModalClosingEventArgs args)
+    {
+        if (FeedbackRef is ConfirmRef confirmRef)
+        {
+            await confirmRef.UpdateConfigAsync();
+        }
+        else if (FeedbackRef is ModalRef modalRef)
+        {
+            if (form.Validate() == true)
+            {
+                form.Submit();
+                //modalRef.Config.ConfirmLoading = true;
+                //await modalRef.UpdateConfigAsync();
+            }
+
+        }
+
+        // only the input's value equals the initialized value, the OK button will close the confirm dialog box
+        if (value != config)
+            args.Cancel = true;
+        else
+            // method 1(not recommended): await (FeedbackRef as ConfirmRef<string>)!.OkAsync(value);
+            // method 2: await (FeedbackRef as IOkCancelRef<string>)!.OkAsync(value);
+            //await base.OkCancelRefWithResult!.OnOk(value);
+
+            await base.OnFeedbackOkAsync(args);
+    }
+
+    private async void OnFinish(EditContext editContext)
+    {
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Saving...",
+                Key = key,
+                Duration = 0
+            };
+
+        _ = _message.Loading(config);
+
+        MenuDetailModel model_ = (MenuDetailModel)editContext.Model;
+
+        try
+        {
+
+            ApiResponse result = await rest.POST($"/api/menu/menu-detail-save", model_, Token);
+
+            config.Duration = 1;
+
+            if (result.Status == true)
+            {
+                MenuDetailModel added = result.Data.ToObject<MenuDetailModel>();
+
+                MenuModel menu = tMenu.Menus.Where(m => m.MenuId == model_.MenuId).FirstOrDefault();
+                List<MenuLeftModel> menus = tMenuLeft.MenuElements.Select(ConvertToLeftMenuModel).ToList();
+
+                if (model_.MenuDetailId == 0)
+                {
+                    if (added.Parent == 0)
+                    {
+                        menus.Add(new MenuLeftModel
+                            {
+                                MenuDetailId = added.MenuDetailId,
+                                MenuId = added.MenuId,
+                                Parent = added.Parent,
+                                Serial = added.Serial,
+                                MenuUrl = menu.MenuUrl,
+                                MenuTitle = menu.MenuTitle,
+                                MenuIcon = menu.MenuIcon,
+                                IsView = added.IsView,
+                                SubMenus = new List<MenuLeftModel>()
+                            });
+                    }
+                    else
+                    {
+                        AddToParent(menus, new MenuLeftModel
+                            {
+                                MenuDetailId = added.MenuDetailId,
+                                MenuId = added.MenuId,
+                                Parent = added.Parent,
+                                Serial = added.Serial,
+                                MenuUrl = menu.MenuUrl,
+                                MenuTitle = menu.MenuTitle,
+                                MenuIcon = menu.MenuIcon,
+                                IsView = added.IsView,
+                                SubMenus = new List<MenuLeftModel>()
+                            }, model.Parent);
+                    }
+
+                }
+                else
+                {
+                    UpdateMenu(menus, new MenuLeftModel
+                        {
+                            MenuDetailId = added.MenuDetailId,
+                            MenuId = added.MenuId,
+                            Parent = added.Parent,
+                            Serial = added.Serial,
+                            MenuUrl = menu.MenuUrl,
+                            MenuTitle = menu.MenuTitle,
+                            MenuIcon = menu.MenuIcon,
+                            IsView = added.IsView,
+                            SubMenus = new List<MenuLeftModel>()
+                        }, model.Parent);
+                }
+
+                tMenuLeft.Selected = new MenuElement(new MenuLeftModel());
+                tMenuLeft.MenuElements = menus.Select(MapToMenuElement).ToList();
+                tMenuLeft.NotifyStateChanged();
+                config.Content = "Done";
+                _ = _message.Success(config);
+            }
+            else
+            {
+                config.Content = result.Message;
+                _ = _message.Error(config);
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = _message.Error(ex.Message);
+        }
+    }
+
+    private void OnFinishFailed(EditContext editContext)
+    {
+
+    }
+
+    // Convert LeftMenuModel to GameElement
+    private MenuElement MapToMenuElement(MenuLeftModel menu)
+    {
+        return new MenuElement(menu)
+            {
+                Child = menu.SubMenus?.Select(MapToMenuElement).ToList() ?? new List<MenuElement>()
+            };
+    }
+
+    public void AddToParent(List<MenuLeftModel> menuLeftModels, MenuLeftModel model, int Parent)
+    {
+        foreach (var item in menuLeftModels)
+        {
+            if (item.MenuDetailId==Parent)
+            {
+                item.SubMenus.Add(model);
+                break;
+            }
+
+            if (item.SubMenus.Any()==true)
+            {
+                AddToParent(item.SubMenus, model, Parent);
+            }
+        }
+    }
+
+    public void UpdateMenu(List<MenuLeftModel> menuLeftModels, MenuLeftModel model, int Parent)
+    {
+        foreach (var item in menuLeftModels)
+        {
+            if (item.MenuDetailId == model.MenuDetailId && item.MenuId == model.MenuId)
+            {
+                item.IsView = model.IsView;
+                break;
+            }
+
+            if (item.SubMenus.Any() == true)
+            {
+                UpdateMenu(item.SubMenus, model, Parent);
+            }
+        }
+    }
+
+    // Convert back to LeftMenuModel from MenuElement
+    private MenuLeftModel ConvertToLeftMenuModel(MenuElement element)
+    {
+        return new MenuLeftModel
+            {
+                MenuDetailId = element.Parent.MenuDetailId,
+                MenuId = element.Parent.MenuId,
+                MenuTitle = element.Parent.MenuTitle,
+                MenuIcon = element.Parent.MenuIcon,
+                MenuUrl = element.Parent.MenuUrl,
+                IsView = element.Parent.IsView,
+                SubMenus = element.Child?.Select(ConvertToLeftMenuModel).ToList()
+            };
+    }
+
+    /// <summary>
+    /// If you want <b>Dispose</b> to take effect every time it is closed in Modal, which created by ModalService,
+    /// set <b>ModalOptions.DestroyOnClose = true</b>
+    /// </summary>
+    /// <param name="disposing"></param>
+    protected override void Dispose(bool disposing)
+    {
+        Console.WriteLine("Dispose");
+        base.Dispose(disposing);
+    }
+}
