@@ -1,28 +1,19 @@
-﻿@page "/menu"
-@attribute [Authorize(Roles = "/menu")]
+﻿@using AppBO.ModelsInv
+@using AppBO.Utility
 @using Erp.Services
 @using Erp.Services.TransferService
-@using AppBO.Models
 @using System.Security.Claims
-@using AppBO.ModelsApi
-@using AppBO.Utility
 @using static AppBO.Utility.Utility
+@inject ColorTS tS;
 @inject IMessageService message;
-@inject MenuTransferService tMenu;
 @inject RestService rest;
-@inject ModalService ModalService
 
-<PageTitle>Menus</PageTitle>
-
-<Divider Text="Menus" Orientation="DividerOrientation.Left"></Divider>
-
-<Table DataSource="@tMenu.Menus.Where(m=>m.IsDelete==false)"
+<Table DataSource="@tS.Colors.Where(m => m.IsDelete == false)"
        PageSize="10"
        AutoColIndexes="true"
        PaginationPosition="topLeft"
        Loading="loading"
-       Size="TableSize.Small"
-       >
+       Size="TableSize.Small">
 
 
     <PaginationTemplate>
@@ -53,43 +44,28 @@
     </EmptyTemplate>
 
     <ColumnDefinitions>
-        <PropertyColumn Property="c=>c.MenuUrl" Title="Url" Ellipsis Sortable Filterable>
+        <PropertyColumn Property="c => c.ColorName" Title="Name" Ellipsis Sortable Filterable>
             <Space Size=@("middle")>
                 <SpaceItem>
                     <Icon Style="cursor: pointer; margin-right: 10px" Type="edit"
-                    OnClick="() => Edit(context)"
-                    Width="20" Height="20" Theme="IconThemeType.Fill" />
+                          OnClick="() => Edit(context)"
+                          Width="20" Height="20" Theme="IconThemeType.Fill" />
                 </SpaceItem>
                 <SpaceItem>
                     <Popconfirm Title="Are you sure you want to delete?"
-                    OnConfirm="()=> Delete(context)"
-                    OkText="Yes"
-                    CancelText="No">
+                                OnConfirm="()=> Delete(context)"
+                                OkText="Yes"
+                                CancelText="No">
                         <Icon Style="cursor: pointer" Type="delete" Width="20" Height="20" Theme="IconThemeType.Fill" />
                     </Popconfirm>
                 </SpaceItem>
                 <SpaceItem>
-                    @if (string.IsNullOrEmpty(context.MenuUrl))
-                    {
-                        <span style="margin-left: 10px">#</span>
-                    }else{
-                        <span style="margin-left: 10px">@context.MenuUrl</span>
-                    }
-                    
+                    <span style="margin-left: 10px">@context.ColorName</span>
                 </SpaceItem>
             </Space>
         </PropertyColumn>
-        <PropertyColumn Property="c=>c.MenuTitle" Title="Title" Ellipsis Sortable Filterable>
-            <Space Size=@("middle")>
-                <SpaceItem>
-                    <Icon Style="cursor: pointer" Type="@context.MenuIcon" Width="15" Height="15" />
-                    <span style="margin-left: 10px">@context.MenuTitle</span>
-                </SpaceItem>
-            </Space>
-        </PropertyColumn>
-        <PropertyColumn Property="c=>c.Scope" Title="Scope" Sortable Filterable />
 
-        <PropertyColumn Property="c=>c.IsActive" Title="Active">
+        <PropertyColumn Property="c => c.IsActive" Title="Active">
             <Space Size=@("middle")>
                 <SpaceItem>
                     <span style="margin-left: 10px">@context.IsActive</span>
@@ -100,66 +76,65 @@
 </Table>
 
 @code {
-
-    private string txtValue { get; set; }
     private bool loading { get; set; } = false;
-
-    public ClaimsPrincipal User;
-
     [CascadingParameter]
     protected Task<AuthenticationState> AuthStat { get; set; }
     public string Token { get; set; }
+    public ClaimsPrincipal User;
 
     protected async override Task OnInitializedAsync()
     {
         loading = true;
         StateHasChanged();
-        tMenu.OnChange += StateHasChanged;
+        tS.OnChange += StateHasChanged;
 
         User = (await AuthStat)?.User;
-        Token =  User.FindFirst("Token")?.Value??"";
-
-        try
-        {
-            List<MenuModel> result = await rest.GET($"/api/menu/all", Token).ToModel<List<MenuModel>>();
-
-            tMenu.Menus = result;
-        }
-        catch (Exception ex)
-        {
-            _ = message.Error(ex.Message);
-        }
+        Token = User.FindFirst("Token")?.Value ?? "";
 
         loading = false;
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                List<ColorModel> result = await rest.GET($"/api/invconfig/color-all", Token).ToModel<List<ColorModel>>();
+
+                tS.Colors = result;
+            }
+            catch (Exception ex)
+            {
+                _ = message.Error(ex.Message);
+            }
+        }
+    }
+
     public void AddNew()
     {
-        tMenu.Menu = new MenuModel()
-            {
-                Scope = keyValue.RoleScopeApp
-            };
+        tS.Color = new ColorModel();
         OpenMyDbEditor();
     }
 
-    public void Edit(MenuModel row)
+    public void Edit(ColorModel row)
     {
-        tMenu.Menu = row;
+        tS.Color = row;
         OpenMyDbEditor();
     }
 
-    async Task Delete(MenuModel row)
+    async Task Delete(ColorModel row)
     {
         string key = $"updatable-{DateTime.Now.Ticks}";
         var config = new MessageConfig()
-            {
-                Content = "Deleting...",
-                Key = key,
-                Duration = 0
-            };
+        {
+            Content = "Deleting...",
+            Key = key,
+            Duration = 0
+        };
         _ = message.Loading(config);
 
-        MenuModel delete = Extention.MapObject<MenuModel>(row);
+        ColorModel delete = Extention.MapObject<ColorModel>(row);
         delete.IsDelete = true;
 
         ApiResponse result = await rest.POST($"/api/menu/save-menu", delete, Token);
@@ -177,22 +152,23 @@
         }
     }
 
+
     private void OpenMyDbEditor()
     {
         var options = new ModalOptions()
+        {
+            Title = tS.Color.ColorId == 0 ? "Add new menu" : "Update menu",
+            MaskClosable = false,
+            OnOk = async (modalRef) =>
             {
-                Title = tMenu.Menu.MenuId == 0 ? "Add new menu" : "Update menu",
-                MaskClosable = false,
-                OnOk = async (modalRef) =>
-                {
-                    // Perform your logic here, e.g., validate or process data
-                    // Do not call modalRef.Close() if you want to keep it open
-                    Console.WriteLine("OK pressed, but modal stays open!");
-                    // Return false or avoid closing logic to keep the modal open
-                },
+                // Perform your logic here, e.g., validate or process data
+                // Do not call modalRef.Close() if you want to keep it open
+                Console.WriteLine("OK pressed, but modal stays open!");
+                // Return false or avoid closing logic to keep the modal open
+            },
 
-            };
+        };
 
-        ModalService.CreateModal<MenuEditorModal, MenuModel, string>(options, tMenu.Menu);
+        // ModalService.CreateModal<MenuEditorModal, BrandModel, string>(options, tBrand.Brand);
     }
 }

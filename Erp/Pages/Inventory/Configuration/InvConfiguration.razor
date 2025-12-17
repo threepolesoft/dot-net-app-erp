@@ -1,0 +1,26 @@
+﻿@page "/inv-configuration"
+@attribute [Authorize(Roles = "/inv-configuration")]
+
+<PageTitle>Configuration</PageTitle>
+
+<Tabs>
+    <TabPane Tab="Brand">
+        <TabBrand/>
+    </TabPane>
+    <TabPane Tab="Category">
+        <TabCategory/>
+    </TabPane>
+    <TabPane Tab="Color">
+        <TabColor/>
+    </TabPane>
+    <TabPane Tab="Size">
+        <TabSize/>
+    </TabPane>
+    <TabPane Tab="Unit">
+        <TabUnit/>
+    </TabPane>
+</Tabs>
+
+@code {
+
+}

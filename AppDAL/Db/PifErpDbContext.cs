@@ -16,10 +16,10 @@ public partial class PifErpDbContext : DbContext
     {
     }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        optionsBuilder.UseSqlServer("Data Source=148.135.47.135,8433;Initial Catalog=pif_erp;User ID=pifdev;Password=qbhmfairnelugjzpdc9o;Persist Security Info=True;TrustServerCertificate=True;");
-    }
+    //protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    //{
+    //    optionsBuilder.UseSqlServer("Data Source=209.195.14.7,8433;Initial Catalog=pif_erp;User ID=pifdev;Password=qbhmfairnelugjzpdc9o;Persist Security Info=True;TrustServerCertificate=True;");
+    //}
 
 
     #region Access Control

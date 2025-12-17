@@ -33,6 +33,11 @@ builder.Services.AddScoped<UserTransferService>();
 builder.Services.AddScoped<RoleTransferService>();
 builder.Services.AddScoped<MenuTransferService>();
 builder.Services.AddScoped<MenuLeftTransferService>();
+builder.Services.AddScoped<BrandTransferServic>();
+builder.Services.AddScoped<CategoryTS>();
+builder.Services.AddScoped<ColorTS>();
+builder.Services.AddScoped<SizeTS>();
+builder.Services.AddScoped<UnitTS>();
 builder.Services.AddScoped<RestService>();
 
 builder.Services.AddSingleton<PluginLoader>();
