@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using AppBO.DbSet.AccessControl;
+using AppBO.DbSet.Inventory;
 using Microsoft.EntityFrameworkCore;
 
 namespace AppDAL.Db;
@@ -41,6 +42,15 @@ public partial class PifErpDbContext : DbContext
     public virtual DbSet<MenuDetail> MenuDetails { get; set; }
     public virtual DbSet<MenuUser> MenuUsers { get; set; }
     #endregion
+
+    #region Inventory
+    public virtual DbSet<Brand> Brands { get; set; }
+    public virtual DbSet<Category> Categories { get; set; }
+    public virtual DbSet<Color> Colors { get; set; }
+    public virtual DbSet<Size> Sizes { get; set; }
+    public virtual DbSet<Unit> Units { get; set; }
+    #endregion Inventory
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
 
