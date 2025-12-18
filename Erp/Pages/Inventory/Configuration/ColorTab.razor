@@ -1,14 +1,15 @@
-﻿@using AppBO.ModelsInv
+﻿@using System.Security.Claims
+@using AppBO.ModelsInventory
 @using AppBO.Utility
 @using Erp.Services
 @using Erp.Services.TransferService
-@using System.Security.Claims
 @using static AppBO.Utility.Utility
-@inject CategoryTS tS;
+@inject ColorTS tS;
 @inject IMessageService message;
 @inject RestService rest;
+@inject ModalService modalService
 
-<Table DataSource="@tS.Categorys.Where(m => m.IsDelete == false)"
+<Table DataSource="@tS.Colors.Where(m => m.IsDelete == false)"
        PageSize="10"
        AutoColIndexes="true"
        PaginationPosition="topLeft"
@@ -44,7 +45,7 @@
     </EmptyTemplate>
 
     <ColumnDefinitions>
-        <PropertyColumn Property="c => c.CategoryName" Title="Name" Ellipsis Sortable Filterable>
+        <PropertyColumn Property="c => c.ColorName" Title="Name" Ellipsis Sortable Filterable>
             <Space Size=@("middle")>
                 <SpaceItem>
                     <Icon Style="cursor: pointer; margin-right: 10px" Type="edit"
@@ -60,7 +61,7 @@
                     </Popconfirm>
                 </SpaceItem>
                 <SpaceItem>
-                    <span style="margin-left: 10px">@context.CategoryName</span>
+                    <span style="margin-left: 10px">@context.ColorName</span>
                 </SpaceItem>
             </Space>
         </PropertyColumn>
@@ -100,9 +101,13 @@
         {
             try
             {
-                List<CategoryModel> result = await rest.GET($"/api/invconfig/category-all", Token).ToModel<List<CategoryModel>>();
+                if (tS.Colors.Count == 0)
+                {
+                    List<ColorModel> result = await rest.GET($"/api/inventory/color-all", Token).ToModel<List<ColorModel>>();
+                    tS.Colors = result;
+                    StateHasChanged();
+                }
 
-                tS.Categorys = result;
             }
             catch (Exception ex)
             {
@@ -113,17 +118,17 @@
 
     public void AddNew()
     {
-        tS.Category = new CategoryModel();
+        tS.Color = new ColorModel();
         OpenMyDbEditor();
     }
 
-    public void Edit(CategoryModel row)
+    public void Edit(ColorModel row)
     {
-        tS.Category = row;
+        tS.Color = row;
         OpenMyDbEditor();
     }
 
-    async Task Delete(CategoryModel row)
+    async Task Delete(ColorModel row)
     {
         string key = $"updatable-{DateTime.Now.Ticks}";
         var config = new MessageConfig()
@@ -134,10 +139,10 @@
         };
         _ = message.Loading(config);
 
-        CategoryModel delete = Extention.MapObject<CategoryModel>(row);
+        ColorModel delete = Extention.MapObject<ColorModel>(row);
         delete.IsDelete = true;
 
-        ApiResponse result = await rest.POST($"/api/menu/save-menu", delete, Token);
+        ApiResponse result = await rest.POST($"/api/inventory/color-save", delete, Token);
         config.Duration = 1;
         if (result.Status == true)
         {
@@ -157,7 +162,7 @@
     {
         var options = new ModalOptions()
         {
-            Title = tS.Category.CategoryId == 0 ? "Add new menu" : "Update menu",
+            Title = tS.Color.ColorId == 0 ? "Add new menu" : "Update menu",
             MaskClosable = false,
             OnOk = async (modalRef) =>
             {
@@ -169,6 +174,6 @@
 
         };
 
-        // ModalService.CreateModal<MenuEditorModal, BrandModel, string>(options, tBrand.Brand);
+        modalService.CreateModal<ColorEditorModal, ColorModel, string>(options, tS.Color);
     }
 }

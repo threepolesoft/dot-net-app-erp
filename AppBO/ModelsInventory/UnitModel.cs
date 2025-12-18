@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace AppBO.ModelsInv
+namespace AppBO.ModelsInventory
 {
     public class UnitModel: TableOption
     {

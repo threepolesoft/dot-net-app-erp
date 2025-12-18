@@ -1,14 +1,15 @@
-﻿@using AppBO.ModelsInv
+﻿@using System.Security.Claims
+@using AppBO.ModelsInventory
 @using AppBO.Utility
 @using Erp.Services
 @using Erp.Services.TransferService
-@using System.Security.Claims
 @using static AppBO.Utility.Utility
-@inject SizeTS tS;
+@inject BrandTransferServic tBrand;
 @inject IMessageService message;
 @inject RestService rest;
+@inject ModalService modalService
 
-<Table DataSource="@tS.Sizes.Where(m => m.IsDelete == false)"
+<Table DataSource="@tBrand.Brands.Where(m => m.IsDelete== false)"
        PageSize="10"
        AutoColIndexes="true"
        PaginationPosition="topLeft"
@@ -44,7 +45,7 @@
     </EmptyTemplate>
 
     <ColumnDefinitions>
-        <PropertyColumn Property="c => c.SizeName" Title="Name" Ellipsis Sortable Filterable>
+        <PropertyColumn Property="c => c.BrandName" Title="Name" Ellipsis Sortable Filterable>
             <Space Size=@("middle")>
                 <SpaceItem>
                     <Icon Style="cursor: pointer; margin-right: 10px" Type="edit"
@@ -60,7 +61,7 @@
                     </Popconfirm>
                 </SpaceItem>
                 <SpaceItem>
-                    <span style="margin-left: 10px">@context.SizeName</span>
+                    <span style="margin-left: 10px">@context.BrandName</span>
                 </SpaceItem>
             </Space>
         </PropertyColumn>
@@ -86,7 +87,7 @@
     {
         loading = true;
         StateHasChanged();
-        tS.OnChange += StateHasChanged;
+        tBrand.OnChange += StateHasChanged;
 
         User = (await AuthStat)?.User;
         Token = User.FindFirst("Token")?.Value ?? "";
@@ -100,9 +101,14 @@
         {
             try
             {
-                List<SizeModel> result = await rest.GET($"/api/invconfig/size-all", Token).ToModel<List<SizeModel>>();
+                if (tBrand.Brands.Count == 0)
+                {
+                    List<BrandModel> result = await rest.GET($"/api/Inventory/brand-all", Token).ToModel<List<BrandModel>>();
 
-                tS.Sizes = result;
+                    tBrand.Brands = result;
+                    StateHasChanged();
+                }
+
             }
             catch (Exception ex)
             {
@@ -113,17 +119,17 @@
 
     public void AddNew()
     {
-        tS.Size = new SizeModel();
+        tBrand.Brand = new BrandModel();
         OpenMyDbEditor();
     }
 
-    public void Edit(SizeModel row)
+    public void Edit(BrandModel row)
     {
-        tS.Size = row;
+        tBrand.Brand = row;
         OpenMyDbEditor();
     }
 
-    async Task Delete(SizeModel row)
+    async Task Delete(BrandModel row)
     {
         string key = $"updatable-{DateTime.Now.Ticks}";
         var config = new MessageConfig()
@@ -134,10 +140,10 @@
         };
         _ = message.Loading(config);
 
-        SizeModel delete = Extention.MapObject<SizeModel>(row);
+        BrandModel delete = Extention.MapObject<BrandModel>(row);
         delete.IsDelete = true;
 
-        ApiResponse result = await rest.POST($"/api/menu/save-menu", delete, Token);
+        ApiResponse result = await rest.POST($"/api/Inventory/brand-save", delete, Token);
         config.Duration = 1;
         if (result.Status == true)
         {
@@ -157,7 +163,7 @@
     {
         var options = new ModalOptions()
         {
-            Title = tS.Size.SizeId == 0 ? "Add new menu" : "Update menu",
+            Title = tBrand.Brand.BrandId == 0 ? "Add new brand" : "Update brand",
             MaskClosable = false,
             OnOk = async (modalRef) =>
             {
@@ -169,6 +175,6 @@
 
         };
 
-        // ModalService.CreateModal<MenuEditorModal, BrandModel, string>(options, tBrand.Brand);
+        modalService.CreateModal<BrandEditorModal, BrandModel, string>(options, tBrand.Brand);
     }
 }

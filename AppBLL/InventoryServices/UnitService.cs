@@ -1,6 +1,6 @@
 ﻿using AppBO.DbSet.AccessControl;
 using AppBO.DbSet.Inventory;
-using AppBO.ModelsInv;
+using AppBO.ModelsInventory;
 using AppBO.Utility;
 using AppDAL.Db;
 using System;
@@ -113,12 +113,12 @@ namespace AppBLL.InventoryServices
         {
             ProccessResult result = new();
 
-            var Entity = pifErpDbContext.Sizes.AsQueryable();
+            var Entity = pifErpDbContext.Units.AsQueryable();
 
-            result.Data = Entity.Select(m => new SizeModel
+            result.Data = Entity.Select(m => new UnitModel
             {
-                SizeId = m.SizeId,
-                SizeName = m.SizeName,
+                UnitId = m.UnitId,
+                UnitName = m.UnitName,
                 IsActive = m.IsActive,
                 IsDelete = m.IsDelete,
                 EntryAt = m.EntryAt,

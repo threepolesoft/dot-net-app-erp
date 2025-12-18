@@ -1,7 +1,7 @@
 ﻿using AppBO.DbSet.AccessControl;
 using AppBO.DbSet.Inventory;
 using AppBO.Models;
-using AppBO.ModelsInv;
+using AppBO.ModelsInventory;
 using AppBO.Utility;
 using AppDAL.Db;
 using System;

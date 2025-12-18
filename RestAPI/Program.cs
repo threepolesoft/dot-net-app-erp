@@ -1,3 +1,4 @@
+using AppBLL.InventoryServices;
 using AppBLL.Services;
 using AppDAL.Db;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -73,6 +74,14 @@ builder.Services.AddScoped<MenuDetailService>();
 builder.Services.AddScoped<RoleMenuService>();
 builder.Services.AddScoped<ApplicationUserService>();
 builder.Services.AddScoped<UsersDevicesService>();
+
+#region inventory services
+builder.Services.AddScoped<BrandService>();
+builder.Services.AddScoped<CategoryService>();
+builder.Services.AddScoped<ColorService>();
+builder.Services.AddScoped<SizeService>();
+builder.Services.AddScoped<UnitService>();
+#endregion inventory services
 
 var app = builder.Build();
 app.UseCors(MyAllowSpecificOrigins);

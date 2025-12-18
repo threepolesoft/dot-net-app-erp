@@ -1,4 +1,4 @@
-﻿using AppBO.ModelsInv;
+﻿using AppBO.ModelsInventory;
 using System.ComponentModel;
 
 namespace Erp.Services.TransferService

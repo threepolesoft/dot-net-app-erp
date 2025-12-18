@@ -1,0 +1,166 @@
+﻿@using System.ComponentModel.DataAnnotations;
+@using AppBO.ModelsInventory
+@using Erp.Services
+@using Erp.Services.TransferService
+@using AppBO.Models
+@using System.Security.Claims
+@using AppBO.Utility
+@using static AppBO.Utility.Utility
+@inherits FeedbackComponent<CategoryModel, string>
+@inject CategoryTS tS;
+@inject IMessageService _message
+@inject RestService rest;
+
+
+<Form @ref="@form"
+    Model="@model"
+    LabelColSpan="8"
+    WrapperColSpan="16"
+    ValidateOnChange="@true"
+    OnFinish="OnFinish"
+    OnFinishFailed="OnFinishFailed"
+    RequiredMark="FormRequiredMark.Required">
+
+    <FormItem Label="Name">
+        <Input @bind-Value="@context.CategoryName" Placeholder="Name" AutoFocus/>
+    </FormItem>
+
+    <FormItem Label="Active">
+        <Checkbox 
+        Value="@context.IsActive"
+        OnChange="(val)=>ChangeActive(val)" />
+    </FormItem>
+
+</Form>
+
+@code {
+
+    private Form<CategoryModel> form = new Form<CategoryModel>();
+
+    public CategoryModel model = new CategoryModel();
+
+    public ClaimsPrincipal User = new ClaimsPrincipal();
+
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthStat { get; set; }
+    public string Token { get; set; }
+
+    protected async override Task OnInitializedAsync()
+    {
+        model = new CategoryModel
+            {
+                CategoryId = this.Options.CategoryId,
+                CategoryName = this.Options.CategoryName,
+                IsActive = this.Options.IsActive
+            };
+
+        User = (await AuthStat)?.User;
+        Token = User.FindFirst("Token")?.Value;
+    }
+
+
+    public override async Task OnFeedbackOkAsync(ModalClosingEventArgs args)
+    {
+        if (FeedbackRef is ConfirmRef confirmRef)
+        {
+            await confirmRef.UpdateConfigAsync();
+        }
+        else if (FeedbackRef is ModalRef modalRef)
+        {
+            if (form.Validate() == true)
+            {
+                form.Submit();
+                modalRef.Config.ConfirmLoading = true;
+                await modalRef.UpdateConfigAsync();
+            }
+
+        }
+
+        await base.OnFeedbackOkAsync(args);
+    }
+
+    public void ChangeActive(bool val)
+    {
+        model.IsActive = val;
+    }
+
+    private async void OnFinish(EditContext editContext)
+    {
+        string key = $"updatable-{DateTime.Now.Ticks}";
+        var config = new MessageConfig()
+            {
+                Content = "Saving...",
+                Key = key,
+                Duration = 0
+            };
+
+        _ = _message.Loading(config);
+
+        CategoryModel model_ = (CategoryModel)editContext.Model;
+
+        try
+        {
+            ApiResponse result = await rest.POST($"/api/inventory/category-save", model_, Token);
+
+            if (FeedbackRef is ModalRef modalRef)
+            {
+                modalRef.Config.ConfirmLoading = false;
+                await modalRef.UpdateConfigAsync();
+            }
+
+            if (result.Status == true)
+            {
+                CategoryModel added = result.Data.ToObject<CategoryModel>();
+
+                if (model_.CategoryId == 0)
+                {
+                    tS.Categorys.Add(added);
+                }
+                else
+                {
+                    foreach (var item in tS.Categorys)
+                    {
+                        if (item.CategoryId == model_.CategoryId)
+                        {
+                            item.CategoryName = model_.CategoryName;
+                            item.IsActive = model_.IsActive;
+                            break;
+                        }
+                    }
+                }
+
+                tS.NotifyStateChanged();
+                config.Content = "Done";
+                config.Duration = 1;
+                _ = _message.Success(config);
+
+            }
+            else
+            {
+                config.Content = result.Message;
+                config.Duration = 2;
+                _ = _message.Error(config);
+            }
+        }
+        catch (Exception ex)
+        {
+            _ = _message.Error(ex.Message);
+        }
+    }
+
+    private void OnFinishFailed(EditContext editContext)
+    {
+
+    }
+
+    /// <summary>
+    /// If you want <b>Dispose</b> to take effect every time it is closed in Modal, which created by ModalService,
+    /// set <b>ModalOptions.DestroyOnClose = true</b>
+    /// </summary>
+    /// <param name="disposing"></param>
+    protected override void Dispose(bool disposing)
+    {
+        Console.WriteLine("Dispose");
+        base.Dispose(disposing);
+    }
+}
